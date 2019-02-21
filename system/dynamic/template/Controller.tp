@@ -1,0 +1,16 @@
+<?php
+
+    use libs\Controller;
+
+    /**
+     * by wds
+     * Controller {{ClassName}}
+     */
+    class {{ClassName}} extends Controller
+    {
+        public function index_action()
+        {
+            //Todo start code here
+        }
+
+    }

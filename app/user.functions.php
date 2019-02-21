@@ -1,0 +1,2 @@
+<?php
+//Funções do usuário

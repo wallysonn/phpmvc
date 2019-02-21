@@ -1,0 +1,31 @@
+RewriteEngine on
+<IfModule mod_rewrite.c>
+    RewriteCond %{HTTPS} !=on
+    RewriteCond %{HTTP_HOST} ^www.(.+)$ [NC]
+    RewriteRule ^(.*)$ http://%1/$1 [R=301,L]
+    RewriteCond %{SCRIPT_FILENAME} !-f
+    RewriteCond %{SCRIPT_FILENAME} !-d
+    RewriteRule ^(.*)$ index.php?url=$1 [L]
+</IfModule>
+
+Options -Indexes
+
+#Páginas de Erro
+ErrorDocument 403 /app/views/_Errors/403.phtml
+ErrorDocument 404 /app/views/_Errors/404.phtml
+ErrorDocument 500 /app/views/_Errors/500.phtml
+
+# 480 weeks
+<FilesMatch "\.(ico|pdf|flv|jpg|jpeg|png|gif|js|css|swf|woff2|otf|svg|ttf|woff)$">
+Header set Cache-Control "max-age=290304000, public"
+</FilesMatch>
+
+# 2 DAYS
+<FilesMatch "\.(xml|txt)$">
+Header set Cache-Control "max-age=172800, public, must-revalidate"
+</FilesMatch>
+
+# 2 HOURS
+<FilesMatch "\.(html|htm|php|phtml)$">
+Header set Cache-Control "max-age=7200, must-revalidate"
+</FilesMatch>

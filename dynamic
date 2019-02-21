@@ -1,0 +1,8 @@
+#!/usr/bin/env php
+<?php
+
+require_once 'system/require.php';
+use dynamic\Kernel;
+
+$kernel = new Kernel();
+$kernel->run();

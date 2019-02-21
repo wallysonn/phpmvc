@@ -1,0 +1,45 @@
+{
+  "DYNAMIC for WDSFramework --help": [],
+  "Usage": "\t\tphp dynamic command. example: php dynamic command:param [command]\n",
+  "Examples": [
+    {
+      "command": "New Model",
+      "description": "php dynamic model",
+      "t": "\t\t"
+    },
+    {
+      "command": "Delete Model",
+      "description": "php dynamic model:Users -d <grey>//Users is [ModelName]</grey>",
+      "t": "\t\t"
+    },
+    {
+      "command": "New Controller",
+      "description": "php dynamic controller:UsersController",
+      "t": "\t\t"
+    },
+    {
+      "command": "Delete Controller",
+      "description": "php dynamic controller:UsersController --del <grey>//UsersController is [ControllerName]</grey>\n",
+      "t": "\t"
+    }
+  ],
+  "Available commands": [
+    {
+      "command": "model",
+      "description": "Create a dynamic model by table. <grey>Example: php dynamic model</grey>",
+      "t": "\t\t\t"
+    },
+    {
+      "command": "controller",
+      "description": "Create a dynamic controller. Example: php dynamic controller:NameController\n",
+      "t": "\t\t"
+    }
+  ],
+  "Options": [
+    {
+      "command": "-d, --del",
+      "description": "For delete current element.\n",
+      "t": "\t\t"
+    }
+  ]
+}

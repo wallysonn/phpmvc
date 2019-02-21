@@ -1,0 +1,971 @@
+<?php
+
+    use DateTime\Date;
+    use SystemSecurity\Security;
+    use SystemString\StringText;
+
+    if (!function_exists('array_column')) {
+        function array_column(array $input, $columnKey, $indexKey = null)
+        {
+            $array = array();
+            foreach ($input as $value) {
+                if (!array_key_exists($columnKey, $value)) {
+                    trigger_error("Key \"$columnKey\" does not exist in array");
+
+                    return false;
+                }
+                if (is_null($indexKey)) {
+                    $array[] = $value[$columnKey];
+                } else {
+                    if (!array_key_exists($indexKey, $value)) {
+                        trigger_error("Key \"$indexKey\" does not exist in array");
+
+                        return false;
+                    }
+                    if (!is_scalar($value[$indexKey])) {
+                        trigger_error("Key \"$indexKey\" does not contain scalar value");
+
+                        return false;
+                    }
+                    $array[$value[$indexKey]] = $value[$columnKey];
+                }
+            }
+
+            return $array;
+        }
+    }
+
+    if (!function_exists('array_group_by')) :
+
+        /**
+         * Groups an array by a given key.
+         *
+         * Groups an array into arrays by a given key, or set of keys, shared between all array members.
+         *
+         * Based on {@author Jake Zatecky}'s {@link https://github.com/jakezatecky/array_group_by array_group_by()} function.
+         * This variant allows $key to be closures.
+         *
+         * @param array $array   The array to have grouping performed on.
+         * @param mixed $key,... The key to group or split by. Can be a _string_,
+         *                       an _integer_, a _float_, or a _callable_.
+         *
+         *                       If the key is a callback, it must return
+         *                       a valid key from the array.
+         *
+         *                       ```
+         *                       string|int callback ( mixed $item )
+         *                       ```
+         *
+         * @return array|null Returns a multidimensional array or `null` if `$key` is invalid.
+         */
+
+        function array_group_by(array $array, $key)
+        {
+            if (!is_string($key) && !is_int($key) && !is_float($key) && !is_callable($key)) {
+                trigger_error('array_group_by(): The key should be a string, an integer, or a callback', E_USER_ERROR);
+
+                return null;
+            }
+
+            $func = (is_callable($key) ? $key : null);
+            $_key = $key;
+
+            // Load the new array, splitting by the target key
+            $grouped = array();
+            foreach ($array as $value) {
+                if (is_callable($func)) {
+                    $key = call_user_func($func, $value);
+                } elseif (is_object($value) && isset($value->{$_key})) {
+                    $key = $value->{$_key};
+                } elseif (isset($value[$_key])) {
+                    $key = $value[$_key];
+                } else {
+                    continue;
+                }
+
+                $grouped[$key][] = $value;
+            }
+
+            // Recursively build a nested grouping if more parameters are supplied
+            // Each grouped array value is grouped according to the next sequential key
+            if (func_num_args() > 2) {
+                $args = func_get_args();
+
+                foreach ($grouped as $key => $value) {
+                    $params = array_merge($value, array_slice($args, 2, func_num_args()));
+                    $grouped[$key] = call_user_func_array('array_group_by', $params);
+                }
+            }
+
+            return $grouped;
+        }
+
+    endif;
+
+    function attrToArray($attr)
+    {
+
+        $obj = new SimpleXMLElement("<element {$attr} />");
+        $obj = (array)$obj;
+
+        return (isset($obj['@attributes'])) ? $obj['@attributes'] : array();
+
+    }
+
+    function setErrorMessage($message, $field)
+    {
+        $error = array(
+            'message' => $message,
+            'field'   => $field,
+            'type'    => 'error'
+        );
+
+        return json_encode($error);
+    }
+
+    function setWarningMessage($message, $field)
+    {
+        $error = array(
+            'message' => $message,
+            'field'   => $field,
+            'type'    => 'warning'
+        );
+
+        return json_encode($error);
+    }
+
+    /**
+     * @param $param
+     *
+     * @return array
+     */
+    function urlParamToArray($param)
+    {
+        //a=1&b=2&c=3...
+        $arr = array();
+        $spl = explode("&", $param);
+
+        foreach ($spl as $part) {
+            $spl_part = explode("=", $part);
+            $arr[$spl_part[0]] = (isset($spl_part[1])) ? urldecode($spl_part[1]) : "";
+        }
+
+        return $arr;
+
+    }
+
+    function is_decimal($val)
+    {
+        return is_numeric($val) && floor($val) != $val;
+    }
+
+    function phpVue($html)
+    {
+
+        $containBody = stripos($html, "<html>") !== false;
+
+
+        libxml_use_internal_errors(true);
+        $dom = new DOMDocument('1.0', 'UTF-8');
+        $dom->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'UTF-8'));
+//        $dom->loadHTML($html);
+        $dom->preserveWhiteSpace = true;
+        $xpath = new DOMXPath($dom);
+        $elementsPhpIf = $xpath->query('//*[@php-if]');
+
+        foreach ($elementsPhpIf as $elm) {
+            $isValid = true;
+            $phpif = $elm->getAttribute("php-if");
+            if (stripos($phpif, "{{") !== false) continue;
+            $phpif = utf8_decode($phpif);
+            eval('$isValid=' . $phpif . ";");
+
+            if (!$isValid) {
+                $elm->parentNode->removeChild($elm);
+            }
+
+        }
+        libxml_use_internal_errors(false);
+
+        if ($containBody) return $dom->saveHTML();
+
+        preg_match("/<body[^>]*>(.*?)<\/body>/is", $dom->saveHTML(), $matches);
+
+        return $matches[1];
+
+    }
+
+    function systemDirectMail($msg, $newParam = null)
+    {
+        if (is_array($msg)) return $msg;
+
+        $chave = array();
+
+        if (is_array($newParam)) {
+            foreach ($newParam as $param => $value) {
+                $param = trim(strtolower($param));
+                $param = str_replace("{{", "", $param);
+                $param = str_replace("}}", "", $param);
+
+                if (is_array($value)) {
+                    $value = json_encode($value);
+                } else {
+                    if (Date::validate($value)->isDate()) $value = Date::format($value)->usToBr();
+                    if (is_decimal($value)) $value = number_format($value, 2, ",", ".");
+                }
+
+                $chave["{{{$param}}}"] = $value;
+            }
+        }
+
+            $data = preg_replace_callback("/{{(.*?)}}/", function ($i) use ($chave, $msg) {
+                $index = $i[1];
+
+                if (in_str(array("->"), $index)) {
+                    $spl = explode("->", $index);
+                    $function_name = trim($spl[0]);
+                    $spl_values = explode(",", $spl[1]);
+
+                    foreach ($spl_values as $k => $vl) {
+                        $vl = trim($vl);
+                        $vl = str_replace("'", "", $vl);
+                        $iArray = '{{' . $vl . '}}';
+                        if (isset($chave[$iArray])) {
+                            $spl_values[$k] = $chave[$iArray];
+                        } else {
+                            $spl_values[$k] = $vl;
+                        }
+                    }
+
+                    if (in_str(array("::"), $function_name)) {
+                        $spl_class = array_map("trim", explode("::", $function_name));
+                        $class_name = $spl_class[0];
+                        $method_name = $spl_class[1];
+                        if (class_exists($class_name)) {
+                            $cname = new $class_name();
+                            if (method_exists($cname, $method_name)) {
+                                return call_user_func_array(array($class_name, $method_name), $spl_values);
+                            } else {
+                                //return "METHOD {$method_name} NOT EXISTS IN CLASS {$class_name}";
+                                return "";
+                            }
+                        } else {
+                            //return "CLASS {$class_name} NOT EXISTS";
+                            return "";
+                        }
+                    } else {
+                        if (function_exists($function_name)) {
+                            return call_user_func_array($function_name, $spl_values);
+                        } else {
+                            //return "[function {$function_name} not exists]";
+                            return "";
+                        }
+                    }
+                } else {
+                    $index = strtolower($index);
+                    $iArray = '{{' . $index . '}}';
+
+                    return (isset($chave[$iArray])) ? $chave[$iArray] : $iArray;
+                }
+
+            }, $msg);
+
+        return $data;
+
+
+    }
+
+    function concatArrayAttr($array, $attr, $value)
+    {
+
+        if (isset($array[$attr])) {
+            $array[$attr] .= " {$value}";
+        } else {
+            $array[$attr] = $value;
+        }
+
+        return $array;
+    }
+
+    function columnSqlFormat($column)
+    {
+        return $column;
+
+        $spl = explode(".", $column);
+        if (count($spl) == 0) {
+            return "`{$column}`";
+        } else {
+            return "`{$spl[0]}`.`{$spl[1]}`";
+        }
+    }
+
+    function renderBody()
+    {
+
+        $fileView = \libs\View::getPage();
+
+        $fSystem = new IncludeFile();
+        echo $fSystem->getfilessystem();
+
+        if (file_exists($fileView)):
+            require_once "$fileView";
+        else:
+            if (substr($fileView, 0, -6) == ".phtml") {
+                echo("View <strong>" . rtrim($fileView, ".phtml") . "</strong> não existe!");
+            } else {
+                echo $fileView;
+            }
+        endif;
+    }
+
+    function redirectToAction($controller, $action = "", $params = array())
+
+    {
+        $isApp = MyApp::CONFIG("useApp");
+        $app = ($isApp) ? getCurrentApp() . "/" : "";
+
+        $url_param = "";
+        if (count($params) > 0) {
+            foreach ($params as $p => $v) {
+                $url_param .= "{$p}={$v}&";
+            }
+            $url_param = "?" . substr($url_param, 0, -1);
+        }
+
+        $url = APP::pathProject() . $app . $controller . "/" . $action . $url_param;
+
+        header("Location: {$url}");
+    }
+
+    function redirectToUrl($url)
+    {
+        header("Location: " . $url);
+    }
+
+    function getCurrentUrl()
+    {
+        $host = $_SERVER['HTTP_HOST'];
+        $address = $_SERVER['REQUEST_URI'];
+
+        return "http://" . $host . $address;
+    }
+
+    function getCurrentLoginUrl()
+    {
+        return substr($_SERVER['REQUEST_URI'], 1);
+    }
+
+    function actionExist($controller, $action)
+    {
+        try {
+
+            if ($action == "" || $controller == "") return false;
+
+            if (class_exists($controller)) {
+                $c = new $controller();
+
+                return method_exists($c, $action);
+            }
+
+            return false;
+
+        } catch (Exception $e) {
+            return false;
+        }
+
+    }
+
+    function getUrlParam($param = "", $valueIfNull = "")
+    {
+
+        $url = getCurrentLoginUrl();
+        $remove_http = str_replace('http://', '', $url);
+        $split_url = explode('?', $remove_http);
+        $allParam = array();
+
+        $isApp = MyApp::CONFIG("useApp");
+        $routerDefault = Router::getDefault();
+        $routerDefault = $routerDefault['default'];
+
+        if (isset($split_url[1])) {
+
+            $split_url[1] = str_replace("+", "%2B", $split_url[1]);
+            parse_str($split_url[1], $array_data);
+            foreach ($array_data as $url_param => $url_value) {
+
+                $url_value = (Security::isEncrypted($url_value)) ? Security::decrypt($url_value) : urldecode($url_value);
+
+                if ($param == "") {
+                    $allParam[$url_param] = $url_value;
+                } else {
+                    if ($param == $url_param) return $url_value;
+                }
+            }
+
+        } else {
+
+            $project = (APP::pathProject() == "/") ? "" : APP::pathProject();
+            $project = ltrim($project, "/");
+
+            $remove_http = str_replace($project, "", $remove_http);
+            $n_url = explode("/", rtrim($remove_http, "/"));
+
+            if ($isApp) {
+                $index_controller = 1;
+                $index_action = 2;
+            } else {
+                $index_controller = 0;
+                $index_action = 1;
+            }
+
+            $controller = (isset($n_url[$index_controller])) ? $n_url[$index_controller] : $routerDefault['controller'];
+            $action = (isset($n_url[$index_action])) ? $n_url[$index_action] : "";
+
+            if (!actionExist($controller, $action)) {
+                $newAction = array($routerDefault['action']);
+                array_splice($n_url, 1, 0, $newAction);
+            }
+
+            $routers = RouterConfig::RegisterRoutes();
+            $current_controller = $controller;
+
+            $filter = array_filter($routers, function ($ev) use ($current_controller) {
+                $default = (isset($ev['default'])) ? $ev['default'] : null;
+                if ($default !== null) {
+                    $cnt = (isset($default['controller'])) ? $default['controller'] : "";
+                    if ($cnt !== "") {
+                        return strcasecmp($current_controller, $cnt) == 0;
+                    }
+                }
+            });
+
+            if (count($filter) > 0) {
+                $filter = array_merge($filter, array());
+                $routers = array();
+                $routers[$current_controller] = reset($filter);
+            }
+
+            foreach ($routers as $routerName => $r) {
+
+                try {
+                    if (!isset($r['url'])) throw new Exception(_LANG_ROUTER_URL_NOT_EXISTS_);
+                    $r_url = rtrim($r['url'], "/");
+
+                    $spl = explode("/", $r_url);
+
+                    for ($i = 2; $i <= count($spl) - 1; $i++) {
+
+                        if (isset($spl[$i])) {
+
+                            $i_url = ($isApp) ? $i + 1 : $i;
+
+                            if (isset($n_url[$i_url])) {
+                                $urlParam = str_replace(array('{', '}'), '', $spl[$i]);
+                                if ($param == "") {
+                                    $allParam[$urlParam] = urldecode($n_url[$i_url]);
+                                } else {
+
+                                    if ($urlParam == $param) {
+                                        return urldecode($n_url[$i_url]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception $e) {
+                    die("RouterERROR: {$e->getMessage()}");
+                }
+            }
+        }
+
+        return ($param == "") ? $allParam : $valueIfNull;
+
+    }
+
+    function getPost($param = "", $valueIfNull = "")
+    {
+        $allParam = array();
+
+        if (isset($_POST)) {
+            if ($param == "") {
+                $allParam = $_POST;
+            } else {
+                if (isset($_POST[$param])) {
+                    return $_POST[$param];
+                }
+            }
+        }
+
+        return ($param == "") ? $allParam : $valueIfNull;
+    }
+
+    function isPost()
+    {
+        return $_SERVER['REQUEST_METHOD'] === 'POST';
+    }
+
+    function isGet()
+    {
+        return $_SERVER['REQUEST_METHOD'] === 'GET';
+    }
+
+    function sessionStart()
+    {
+        if (!isset($_SESSION)) session_start(['cookie_path' => '/']);
+    }
+
+    function getArrayIndice($array, $value)
+    {
+        foreach (array_keys($array, $value) as $key) {
+            return $key;
+        }
+
+        return -1;
+    }
+
+    function getCurrentController()
+    {
+        $url = $_SERVER["REQUEST_URI"];
+        $isApp = MyApp::CONFIG("useApp");
+        $projectPath = APP::pathProject();
+        $routerDefault = Router::getDefault();
+        $routerDefault = $routerDefault['default'];
+
+        if ($projectPath !== "/") {
+            //retira o nome do projeto
+            $url = str_replace(APP::pathProject(), "", $url);
+        } else {
+            $url = ltrim($url, "/");
+        }
+
+        if ($isApp) {
+            //site.com/app/controle/action...
+            $index = 1;
+        } else {
+            //site.com/controle/action...
+            $index = 0;
+        }
+
+        if (strstr($url, "?")) {
+            $spl = explode("?", $url);
+
+            if (strstr(rtrim($spl[0], "/"), "/")) {
+                $part = explode("/", $spl[0]);
+
+                return (isset($part[$index])) ? $part[$index] : $routerDefault['controller'];
+            } else {
+                return ($isApp) ? $routerDefault['controller'] : $spl[$index];
+            }
+
+        } else {
+
+            if (strstr(rtrim($url, "/"), "/")) {
+                $part = explode("/", $url);
+
+                return (isset($part[$index])) ? $part[$index] : $routerDefault['controller'];
+            } else {
+                return ($isApp) ? $routerDefault['controller'] : $url;
+
+            }
+        }
+    }
+
+    function getCurrentApp()
+    {
+        $url = $_SERVER["REQUEST_URI"];
+        $isApp = MyApp::CONFIG("isApp");
+        $projectPath = APP::pathProject();
+
+        if ($projectPath !== "/") {
+            $url = str_replace(APP::pathProject(), "", $url);
+        } else {
+            $url = ltrim($url, "/");
+        }
+
+        if ($isApp) {
+
+            $part = explode("/", rtrim($url, "/"));
+
+            return $part[0];
+
+        } else {
+            //site.com/controle/action...
+            return "";
+        }
+    }
+
+    function getCurrentAction()
+    {
+        $url = $_SERVER["REQUEST_URI"];
+        $isApp = MyApp::CONFIG("isApp");
+        $projectPath = APP::pathProject();
+        $routerDefault = Router::getDefault();
+        $routerDefault = $routerDefault['default'];
+
+        if ($projectPath !== "/") {
+            $url = str_replace(APP::pathProject(), "", $url);
+        } else {
+            $url = ltrim($url, "/");
+        }
+
+        if ($isApp) {
+            //site.com/app/controle/action...
+            $index = 2;
+        } else {
+            //site.com/controle/action...
+            $index = 1;
+        }
+
+        if (strstr($url, "?")) {
+            $spl = explode("?", $url);
+            //verifica se tem uma action diferente de index
+            if (strstr(rtrim($spl[0], "/"), "/")) {
+                $part = explode("/", rtrim($spl[0], "/"));
+
+                return (isset($part[$index])) ? $part[$index] : $routerDefault['action'];
+            } else {
+                return $routerDefault['action'];
+            }
+
+        } else {
+            if (strstr(rtrim($url, "/"), "/")) {
+                $part = explode("/", rtrim($url, "/"));
+
+                return (isset($part[$index])) ? $part[$index] : $routerDefault['action'];
+            } else {
+                return $routerDefault['action'];
+            }
+        }
+    }
+
+    function xml2array($xml)
+    {
+        $arr = array();
+
+        foreach ($xml->children() as $r) {
+            if (count($r->children()) == 0) {
+                $arr[$r->getName()] = strval($r);
+            } else {
+                $arr[$r->getName()][] = xml2array($r);
+            }
+        }
+
+        return $arr;
+    }
+
+    function getFileList($dir)
+    {
+        // array to hold return value
+        $retval = array();
+
+        // add trailing slash if missing
+        if (substr($dir, -1) != "/") $dir .= "/";
+
+        // open pointer to directory and read list of files
+        $d = @dir($dir) or die("getFileList: Failed opening directory $dir for reading");
+        while (false !== ($entry = $d->read())) {
+            // skip hidden files
+            if ($entry[0] == ".") continue;
+            if (is_dir("$dir$entry")) {
+                $retval[] = array(
+                    "name"    => "$dir$entry/",
+                    "type"    => filetype("$dir$entry"),
+                    "size"    => 0,
+                    "lastmod" => filemtime("$dir$entry")
+                );
+            } elseif (is_readable("$dir$entry")) {
+                $retval[] = array(
+                    "name"    => "$dir$entry",
+                    "type"    => mime_content_type("$dir$entry"),
+                    "size"    => filesize("$dir$entry"),
+                    "lastmod" => filemtime("$dir$entry")
+                );
+            }
+        }
+        $d->close();
+
+        return $retval;
+    }
+
+    function file_exists_network($urlFile)
+    {
+
+        $exists = true;
+        $file_headers = @get_headers($urlFile);
+        if ($file_headers[0] == 'HTTP/1.0 404 Not Found' || $file_headers[0] == 'HTTP/1.1 404 Not Found') {
+            $exists = false;
+        } else if (($file_headers[0] == 'HTTP/1.0 302 Found' && $file_headers[7] == 'HTTP/1.0 404 Not Found') || ($file_headers[0] == 'HTTP/1.1 302 Found' && $file_headers[7] == 'HTTP/1.1 404 Not Found')) {
+            $exists = false;
+        }
+
+        return $exists;
+
+    }
+
+    function isRequestAjax()
+    {
+        return (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest');
+    }
+
+    function sanitize_output($buffer)
+    {
+
+        $search = array(
+            '/\>[^\S ]+/s',  // strip whitespaces after tags, except space
+            '/[^\S ]+\</s',  // strip whitespaces before tags, except space
+            '/(\s)+/s',       // shorten multiple whitespace sequences
+            '/<!--(.*)-->/Uis' //Remove comments
+        );
+        $replace = array(
+            '>',
+            '<',
+            '\\1',
+            ''
+        );
+
+        $buffer = preg_replace($search, $replace, $buffer);
+
+        return $buffer;
+    }
+
+    function formatSizeUnits($bytes)
+    {
+        if ($bytes >= 1073741824) {
+            $bytes = number_format($bytes / 1073741824, 0) . ' GB';
+        } elseif ($bytes >= 1048576) {
+            $bytes = number_format($bytes / 1048576, 0) . ' MB';
+        } elseif ($bytes >= 1024) {
+            $bytes = number_format($bytes / 1024, 0) . ' KB';
+        } elseif ($bytes > 1) {
+            $bytes = $bytes . ' bytes';
+        } elseif ($bytes == 1) {
+            $bytes = $bytes . ' byte';
+        } else {
+            $bytes = '0 bytes';
+        }
+
+        return $bytes;
+    }
+
+    function formatSeconds($seconds)
+    {
+        // list($usec, $sec) = explode(' ', $seconds); //split the microtime on space
+        //with two tokens $usec and $sec
+        $spl = explode(".", $seconds);
+        $ml = (isset($spl[1])) ? $spl[1] : 0;
+        $mile = substr($ml, 0, 3);
+        $seg = (isset($spl[0])) ? $spl[0] : 0;
+
+        return ($seg <= 0) ? $mile . "ms" : date('s', $seg) . "s " . $mile . "ms";
+    }
+
+    function randomGen($min, $max, $quantity)
+    {
+        $numbers = range($min, $max);
+        shuffle($numbers);
+
+        return array_slice($numbers, 0, $quantity);
+    }
+
+    function in_array_multidimentional($item, array $array)
+    {
+        return (preg_match('/"' . $item . '"/i', json_encode($array)) > 0) ? true : false;
+    }
+
+    function ping($host)
+    {
+        $p = @fsockopen("ssl://" . $host, 443, $errno, $errstr, 3);
+        if ($p) {
+            fclose($p);
+
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    function fgets_u()
+    {
+        return trim(fgets(STDIN, 1024));
+    }
+
+    function in_str(array $array_text, $string, $all = false)
+    {
+
+        if (!is_array($array_text)) return false;
+
+        $ini = array('[', ']', '(', ')', '*', '/', '.', '|', '^');
+        $end = array('\[', '\]', '\(', '\)', '\*', '\/', '\.', '\|', '\^');
+
+        $existe = false;
+        //$cumulative = false;
+
+        foreach ($array_text as $text) {
+
+            $procurar = str_replace($ini, $end, $text);
+            $ret = preg_match("/({$procurar})/i", $string, $r);
+
+            $existe = $ret !== 0;
+
+            if (!$all) {
+                if ($existe) break;
+            } else {
+                if (!$existe) break;
+            }
+        }
+
+        return $existe;
+
+    }
+
+    function convertArrayToHtmlAttribute($array, array $ignore = array())
+    {
+        $html = "";
+
+        if (is_array($array)) {
+            foreach ($array as $attr => $value) {
+                if (!in_array($attr, $ignore)) $html .= " {$attr}='{$value}'";
+            }
+        }
+
+        return $html;
+    }
+
+    function getFileAndPath($pathfile, $defaultpath)
+    {
+
+        //$pathfile = 'pathname/subpath/file'
+
+        if (in_str(array("/"), $pathfile)) {
+
+            $spl = explode("/", $pathfile);
+            $filename = $spl[count($spl) - 1]; //last item
+            $path = str_replace($filename, '', $pathfile);
+            $path = rtrim($path, "/"); //remove last bar
+        } else {
+            $path = $defaultpath;
+            $filename = $pathfile;
+        }
+
+        return array(
+            'filename' => $filename,
+            'path'     => $path
+        );
+
+    }
+
+    function header_chartsetISO()
+    {
+        header('Content-Type: text/html; charset=iso-8859-1');
+    }
+
+    function header_chartsetUTF8()
+    {
+        header('Content-Type: text/html; charset=utf8');
+    }
+
+    function removeBOM($str = "")
+    {
+        if (substr($str, 0, 3) == pack("CCC", 0xef, 0xbb, 0xbf)) {
+            $str = substr($str, 3);
+        }
+
+        return $str;
+    }
+
+    function getOnlyNumbers($str)
+    {
+        return preg_replace("/[^0-9]/", "", $str);
+    }
+
+    function object_to_array($data)
+    {
+        if (is_array($data) || is_object($data)) {
+            $result = array();
+            foreach ($data as $key => $value) {
+                $result[$key] = object_to_array($value);
+            }
+
+            return $result;
+        }
+
+        return $data;
+    }
+
+    function isEmpty($vl){
+        return $vl === "" || is_null($vl);
+    }
+
+    class JSON
+    {
+        static function isJSON($string)
+        {
+            json_decode($string);
+
+            return (json_last_error() == JSON_ERROR_NONE);
+        }
+
+        static
+        function encode($value, $options = 0, $depth = 512)
+        {
+            return json_encode($value, $options, $depth);
+        }
+
+        static
+        function decode($json, $assoc = false, $depth = 512, $options = 0)
+        {
+            return json_decode($json, $assoc, $depth, $options);
+        }
+
+        static
+        function read($pathfile, $result_format = "normal") //$result_format: array|object|normal
+        {
+            try {
+
+                if (!file_exists($pathfile)) throw new Exception("File {$pathfile} not exists!");
+                $fileStr = file_get_contents($pathfile);
+
+                $fileStr = preg_replace('!/\*.*?\*/!s', '', $fileStr);
+                $fileStr = preg_replace('/\n\s*\n/', "\n", $fileStr);
+                $fileStr = str_replace('var my_app = ', "", $fileStr);
+                $fileStr = str_replace('var my_app=', "", $fileStr);
+                $fileStr = str_replace('var my_app =', "", $fileStr);
+                $fileStr = str_replace('var my_app= ', "", $fileStr);
+
+                $result_format = StringText::convert($result_format)->toLower();
+
+                if ($result_format == "object") return json_decode($fileStr);
+                if ($result_format == "array") return object_to_array(json_decode($fileStr));
+
+                return $fileStr;
+
+
+            } catch (Exception $e) {
+                return $e->getMessage();
+            }
+
+        }
+
+        static
+        function convertToArray($json)
+        {
+
+        }
+    }
+
+    class Regex
+    {
+        static
+        function replaceBetween($start, $end, $new, $source)
+        {
+            return preg_replace('#(' . preg_quote($start) . ')(.*?)(' . preg_quote($end) . ')#si', '$1' . $new . '$3', $source);
+        }
+
+        static
+        function replaceFromTo($start, $end, $new, $source)
+        {
+            return preg_replace("/" . preg_quote($start) . ".*?(?=\\s*" . preg_quote($end) . "|\\)|$)/i", $new, $source);
+        }
+    }
+
+
