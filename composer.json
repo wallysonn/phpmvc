@@ -1,0 +1,8 @@
+{
+    "name": "wds/phpmvc",
+    "description": "Simples Framework PHP MVC",
+    "require": {
+        "php": "5.6.*",
+        "another-vendor/package": "1.*"
+    }
+}
