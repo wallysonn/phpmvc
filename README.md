@@ -1,2 +1,6 @@
-# zapzap
-Encurtador de URL com relatório em tempo real via WhatsApp
+# PHPMVC
+Simples framework PHP MVC
+
+## Requerido
+- PHP 5.6.*
+- Composer
