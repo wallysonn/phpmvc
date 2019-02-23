@@ -4,6 +4,7 @@
     "keywords": ["mvc", "php", "phpmvc", "framework"],
     "license": "MIT",
     "type": "phpmvc",
+    "version": "1.0.0",
     "authors": [{
         "name": "Walison Gomes",
         "email": "wgwalisongomes@gmail.com"
