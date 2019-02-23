@@ -5,6 +5,7 @@
     "license": "MIT",
     "type": "phpmvc",
     "version": "1.0.0",
+    "minimum-stability": "dev",
     "authors": [{
         "name": "Walison Gomes",
         "email": "wgwalisongomes@gmail.com"
